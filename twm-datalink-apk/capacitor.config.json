@@ -1,0 +1,24 @@
+{
+  "appId": "br.com.twmtransportes.datalink",
+  "appName": "TWM DataLink",
+  "webDir": "www",
+  "server": {
+    "url": "https://twmtransportes-dev.github.io/central-operacoes-twm/",
+    "cleartext": false,
+    "allowNavigation": [
+      "twmtransportes-dev.github.io",
+      "script.google.com",
+      "script.googleusercontent.com",
+      "docs.google.com",
+      "*.googleusercontent.com",
+      "*.basemaps.cartocdn.com",
+      "unpkg.com",
+      "cdnjs.cloudflare.com",
+      "api.imgbb.com",
+      "nominatim.openstreetmap.org"
+    ]
+  },
+  "plugins": {
+    "BackgroundGeolocation": {}
+  }
+}

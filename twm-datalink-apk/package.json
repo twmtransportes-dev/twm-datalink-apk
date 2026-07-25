@@ -1,0 +1,16 @@
+{
+  "name": "twm-datalink-apk",
+  "version": "1.0.0",
+  "description": "APK do TWM DataLink com GPS em segundo plano",
+  "main": "index.js",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1"
+  }
+}
