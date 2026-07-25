@@ -16,7 +16,7 @@ jobs:
       - name: Instalar Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
 
       - name: Instalar Java (necessário para Android)
         uses: actions/setup-java@v4
@@ -35,7 +35,7 @@ jobs:
 
       - name: Adicionar permissão de GPS em segundo plano
         run: |
-          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />\n</manifest>#' android/app/src/main/AndroidManifest.xml
           cat android/app/src/main/AndroidManifest.xml
 
       - name: Gerar ícones do app
