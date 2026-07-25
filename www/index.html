@@ -8,32 +8,42 @@
     html,body{margin:0;height:100%;background:#1a1030;color:#fff;
       font-family:-apple-system,'Segoe UI',Roboto,sans-serif;
       display:flex;align-items:center;justify-content:center;text-align:center}
-    .box{padding:24px}
+    .box{padding:24px;max-width:320px}
     .logo{width:84px;height:84px;border-radius:20px;background:#7C3AED;
       display:flex;align-items:center;justify-content:center;
       font-weight:800;font-size:26px;margin:0 auto 16px}
-    .msg{opacity:.7;font-size:14px}
+    .msg{opacity:.75;font-size:14px;line-height:1.5;margin-top:8px}
+    .btn{margin-top:20px;display:inline-block;background:#7C3AED;color:#fff;
+      border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700}
   </style>
 </head>
 <body>
   <div class="box">
     <div class="logo">TWM</div>
     <div>TWM DataLink</div>
-    <div class="msg" id="msg">Carregando...</div>
+    <div class="msg" id="msg">Iniciando rastreamento...</div>
+    <button class="btn" id="btnAbrir" style="display:none" onclick="abrirSite()">Abrir sistema</button>
   </div>
 
   <script>
-  /* Este index só existe dentro do APK. Ele:
-     1. Inicia o GPS nativo em segundo plano (roda com o app fechado).
-     2. Abre o site, onde estão todos os módulos.
-     O site em si continua sendo o mesmo do GitHub — nada é duplicado aqui. */
+  /* ==========================================================================
+     index do APK — inicia o GPS nativo e abre o sistema.
+
+     MUDANÇA IMPORTANTE vs versão anterior:
+     - NÃO usa window.location.href para o site (isso matava o rastreamento).
+       Em vez disso abre o sistema num WEBVIEW SEPARADO (Browser plugin) OU
+       mantém esta página viva e carrega o sistema por cima. Assim o watcher
+       do GPS continua rodando mesmo com a tela apagada.
+     - Removido o distanceFilter alto: agora reporta por TEMPO e movimento,
+       então não para quando o caminhão fica parado.
+     ========================================================================== */
 
   var SITE = 'https://twmtransportes-dev.github.io/central-operacoes-twm/';
   var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxZ5P_l0cBM3g79srBUcxwdpMkKSHeE8d89Ksp9uFjhw4YnD2-m5rH8MVMyB5rDWRX9wQ/exec';
 
-  function _vp()     { return (localStorage.getItem('twm_vp_tablet')    || '').toUpperCase(); }
-  function _placa()  { return (localStorage.getItem('twm_placa_tablet') || '').toUpperCase(); }
-  function _device() {
+  function _vp()    { return (localStorage.getItem('twm_vp_tablet')    || '').toUpperCase(); }
+  function _placa() { return (localStorage.getItem('twm_placa_tablet') || '').toUpperCase(); }
+  function _device(){
     var id = localStorage.getItem('twm_device_id');
     if (!id) {
       id = 'TBL-' + (Math.random().toString(36).slice(2,8) +
@@ -47,9 +57,15 @@
     catch (e) { return ''; }
   }
 
+  // último envio: evita floodar o servidor quando reporta muito rápido
+  var _ultimoEnvio = 0;
   function enviarPos(lat, lng, acc) {
     var frota = _vp();
-    if (!frota) return;   // sem VP configurada não envia
+    if (!frota) return;                 // sem VP configurada não envia
+    var agora = Date.now();
+    if (agora - _ultimoEnvio < 15000) return;  // no máximo 1 envio a cada 15s
+    _ultimoEnvio = agora;
+
     var qs = '?action=salvarLocalizacao'
       + '&nome='   + encodeURIComponent(_nome())
       + '&frota='  + encodeURIComponent(frota)
@@ -58,43 +74,88 @@
       + '&lat=' + lat + '&lng=' + lng
       + '&precisao=' + Math.round(acc || 0)
       + '&ts=' + encodeURIComponent(new Date().toISOString())
-      + '&_t=' + Date.now();
+      + '&_t=' + agora;
     fetch(SCRIPT_URL + qs, { method:'GET', redirect:'follow' }).catch(function(){});
   }
 
-  // Inicia o GPS em segundo plano via plugin do Capacitor
-  function iniciarGpsNativo() {
+  var watcherId = null;
+
+  function iniciarGpsNativo(onPronto) {
     try {
-      var BG = Capacitor.Plugins.BackgroundGeolocation;
-      if (!BG) { document.getElementById('msg').textContent = 'Abrindo...'; return abrirSite(); }
+      var BG = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.BackgroundGeolocation;
+      if (!BG) { return onPronto && onPronto(false); }
 
       BG.addWatcher({
-        backgroundMessage: 'Rastreamento TWM ativo',
-        backgroundTitle: 'TWM DataLink',
+        backgroundMessage: 'Ativo',
+        backgroundTitle: 'TWM',
         requestPermissions: true,
-        stale: false,
-        distanceFilter: 50   // envia a cada ~50m de deslocamento
+        stale: true,          // aceita posição mesmo parado (não zera quando para)
+        distanceFilter: 0     // 0 = reporta por tempo, não só por movimento
       }, function (location, error) {
-        if (error) return;
+        if (error) {
+          if (error.code === 'NOT_AUTHORIZED') {
+            document.getElementById('msg').innerHTML =
+              'Permissão de localização negada.<br>Ative "Permitir o tempo todo" nas configurações.';
+          }
+          return;
+        }
         if (location) enviarPos(location.latitude, location.longitude, location.accuracy);
-      }).then(function () {
-        abrirSite();
+      }).then(function (id) {
+        watcherId = id;
+        onPronto && onPronto(true);
+      }).catch(function () {
+        onPronto && onPronto(false);
       });
     } catch (e) {
-      abrirSite();
+      onPronto && onPronto(false);
     }
   }
 
   function abrirSite() {
-    // abre o site com todos os módulos
-    window.location.href = SITE;
+    // Abre o sistema no navegador embutido do app (mantém o GPS vivo por trás).
+    // Se o plugin Browser não existir, cai para navegação direta.
+    var Browser = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Browser;
+    if (Browser && Browser.open) {
+      Browser.open({ url: SITE, presentationStyle: 'fullscreen' });
+    } else {
+      window.location.href = SITE;
+    }
   }
 
-  // espera o Capacitor carregar
-  document.addEventListener('deviceready', iniciarGpsNativo, false);
-  // fallback: se não for APK (rodando no navegador), só abre o site
+  function boot() {
+    var msg = document.getElementById('msg');
+    document.getElementById('btnAbrir').style.display = 'inline-block';
+
+    var ehApk = !!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.BackgroundGeolocation);
+
+    // No APK, SEMPRE inicia o watcher nativo — mas o envio da posição só
+    // acontece quando há VP configurada (ver enviarPos: 'if (!frota) return').
+    // Assim:
+    //  - Tablet fixo (tem VP): rastreia desde a abertura.
+    //  - Tablet novo sem VP: watcher liga, mas só passa a enviar quando o
+    //    admin configurar a VP — sem precisar reabrir o app.
+    //  - Telefone do motorista: sem VP, o watcher liga mas nunca envia nada.
+    if (ehApk) {
+      iniciarGpsNativo(function (ok) {
+        msg.textContent = _vp()
+          ? ('Rastreando ' + _vp() + '. Abrindo o sistema...')
+          : 'Abrindo o sistema...';
+        setTimeout(abrirSite, ok ? 800 : 400);
+      });
+    } else {
+      // navegador comum (não é APK): o site cuida do GPS ao abrir o mapa
+      msg.textContent = 'Abrindo o sistema...';
+      setTimeout(abrirSite, 400);
+    }
+  }
+
+  document.addEventListener('deviceready', boot, false);
+  // fallback para navegador comum (sem Capacitor)
   setTimeout(function () {
-    if (!window.Capacitor || !window.Capacitor.Plugins) abrirSite();
+    if (!window.Capacitor || !window.Capacitor.Plugins) {
+      document.getElementById('msg').textContent = 'Abrindo o sistema...';
+      abrirSite();
+    }
   }, 2500);
   </script>
 </body>
