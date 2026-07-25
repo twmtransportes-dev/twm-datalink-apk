@@ -2,6 +2,9 @@
   "appId": "br.com.twmtransportes.datalink",
   "appName": "TWM DataLink",
   "webDir": "www",
+  "android": {
+    "useLegacyBridge": true
+  },
   "server": {
     "url": "https://twmtransportes-dev.github.io/central-operacoes-twm/",
     "cleartext": false,
